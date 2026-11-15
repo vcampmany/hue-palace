@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hue-palace</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e4e2dc;
+    --ok: #1f8a4c; --ok-bg: #e3f4ea; --bad: #c0392b; --bad-bg: #fbe7e4; --warn: #a86500; --warn-bg: #fdf1dc;
+    --accent: #f2b705; --flash: #fff2b8; --kbd-bg: #f0eee8;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --ink: #ecebe6; --muted: #9a9892; --line: #33322f;
+      --ok: #5cc98a; --ok-bg: #173323; --bad: #f07c6c; --bad-bg: #3a1d19; --warn: #f0b75a; --warn-bg: #3a2b12;
+      --accent: #f2b705; --flash: #4a3f12; --kbd-bg: #2a2a27;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 24px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+       margin: 28px 0 10px; font-weight: 600; }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+          font-size: 12.5px; font-weight: 600; background: var(--line); color: var(--muted); white-space: nowrap; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12.5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  @media (max-width: 420px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .card.offline { opacity: .82; }
+  .card-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--line); }
+  .card-title { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .card-title h3 { margin: 0; font-size: 15px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+  .last { margin-top: 6px; min-height: 1.4em; }
+
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 6px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; border-top: 0; }
+  tr:first-child td { border-top: 0; }
+  tr.flash td { animation: flash 1.4s ease-out; }
+  @keyframes flash { 0% { background: var(--flash); } 100% { background: transparent; } }
+  kbd { display: inline-block; min-width: 1.8em; text-align: center; padding: 1px 6px; border-radius: 5px;
+        background: var(--kbd-bg); border: 1px solid var(--line); border-bottom-width: 2px;
+        font: 600 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .problem { color: var(--bad); font-size: 12.5px; margin-top: 2px; }
+
+  .table-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+  .table-wrap table { min-width: 560px; }
+  .empty { padding: 14px; color: var(--muted); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 8px;
+          background: var(--panel); border: 1px solid var(--line); }
+  .chip .bulb { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .chip.on .bulb { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .chip .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+  .res-ok { color: var(--ok); } .res-bad { color: var(--bad); } .res-pending { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--muted); margin: 10px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>hue<span>·</span>palace</h1>
+    <span id="bridge" class="pill"><span class="dot"></span>Bridge …</span>
+    <span class="spacer"></span>
+    <span id="uptime" class="muted small"></span>
+    <span id="live" class="pill"><span class="dot"></span>connecting</span>
+  </header>
+
+  <h2>Keyboards</h2>
+  <div id="keyboards" class="grid"></div>
+
+  <h2>Lights</h2>
+  <div id="rooms" class="chips"></div>
+  <details>
+    <summary>Individual lights</summary>
+    <div id="lights" class="chips"></div>
+  </details>
+
+  <h2>Activity</h2>
+  <div class="table-wrap"><table id="log"></table></div>
+
+  <h2>Other input devices</h2>
+  <p class="muted small" style="margin-top:-4px">Detected devices that don't match any configured keyboard. Copy the name or MAC into <span class="mono">config.yaml</span> to use one.</p>
+  <div class="table-wrap"><table id="unassigned"></table></div>
+</main>
+
+<script>
+"use strict";
+let snap = null;
+let clockOffset = 0;                // server time - client time, seconds
+const flashes = new Map();          // "kb\u0000key" -> client ms
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const now = () => Date.now() / 1000 + clockOffset;
+
+function ago(ts) {
+  if (!ts) return "never";
+  const s = Math.max(0, Math.round(now() - ts));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+function duration(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${sec % 60}s`;
+}
+const clock = (ts) => new Date((ts - clockOffset) * 1000).toLocaleTimeString();
+const prettyKey = (k) => esc(String(k).replace(/^(KEY|BTN)_/, ""));
+
+function renderHeader() {
+  const b = snap.bridge;
+  const el = $("bridge");
+  el.className = "pill " + (b.connected ? "ok" : "bad");
+  el.innerHTML = `<span class="dot"></span>Bridge ${esc(b.host)} · ${b.connected ? "connected" : esc(b.error || "disconnected")}`;
+  el.title = b.bridge_id ? `Bridge id ${b.bridge_id}` : "";
+  $("uptime").textContent = `up ${duration(now() - snap.started_at)}`;
+}
+
+function renderKeyboards() {
+  $("keyboards").innerHTML = snap.keyboards.map((kb) => {
+    const match = [kb.match.mac && `MAC ${esc(kb.match.mac)}`,
+                   kb.match.name && `name ${kb.match.name_contains ? "contains" : "="} “${esc(kb.match.name)}”`]
+                  .filter(Boolean).join(" · ");
+    const grabbed = kb.nodes.length && kb.nodes.every((n) => n.grabbed);
+    const nodeErr = kb.nodes.map((n) => n.error).filter(Boolean);
+    const status = kb.connected
+      ? `<span class="pill ok"><span class="dot"></span>Connected</span>`
+      : `<span class="pill"><span class="dot"></span>Waiting for device</span>`;
+    const last = kb.last_key
+      ? `Last key <kbd>${prettyKey(kb.last_key)}</kbd> <span class="muted">${ago(kb.last_key_at)}</span>${
+          kb.keys.some((k) => k.key === kb.last_key) ? "" : ` <span class="muted">(not mapped)</span>`}`
+      : `<span class="muted">No key pressed yet</span>`;
+    const rows = kb.keys.map((k) => {
+      const id = kb.name + "\u0000" + k.key;
+      const fresh = Date.now() - (flashes.get(id) || 0) < 1400;
+      return `<tr data-id="${esc(id)}" class="${fresh ? "flash" : ""}">
+        <td style="width:1%;white-space:nowrap"><kbd>${prettyKey(k.key)}</kbd></td>
+        <td>${esc(k.description)}${k.problem ? `<div class="problem">⚠ ${esc(k.problem)}</div>` : ""}</td></tr>`;
+    }).join("");
+    return `<section class="card ${kb.connected ? "" : "offline"}">
+      <div class="card-head">
+        <div class="card-title"><h3>${esc(kb.name)}</h3>${status}</div>
+        <div class="meta small muted">
+          <span>${match}</span>
+          ${kb.connected ? `<span>${kb.nodes.length} input node${kb.nodes.length > 1 ? "s" : ""}${
+              kb.grab ? (grabbed ? " · grabbed" : " · <span class='res-bad'>not grabbed</span>") : ""}</span>
+            <span>since ${ago(kb.connected_since)}</span>` : ""}
+          <span>${kb.presses} press${kb.presses === 1 ? "" : "es"}</span>
+        </div>
+        ${nodeErr.length ? `<div class="problem">${nodeErr.map(esc).join("<br>")}</div>` : ""}
+        <div class="last small">${last}</div>
+      </div>
+      <table>${rows}</table>
+    </section>`;
+  }).join("") || `<div class="empty">No keyboards configured.</div>`;
+}
+
+function chip(item, withKind) {
+  const level = item.on && item.brightness != null ? `${item.brightness}%` : item.on ? "on" : "off";
+  return `<div class="chip ${item.on ? "on" : ""}"><span class="bulb"></span>
+    <span>${withKind ? `<span class="kind">${esc(item.kind)}</span> ` : ""}${esc(item.name)}</span>
+    <span class="muted small">${level}</span></div>`;
+}
+function renderLights() {
+  const { rooms, lights } = snap.hue;
+  const offline = `<span class="muted">${snap.bridge.connected ? "Nothing found on the bridge." : "Waiting for the bridge…"}</span>`;
+  $("rooms").innerHTML = rooms.length ? rooms.map((r) => chip(r, true)).join("") : offline;
+  $("lights").innerHTML = lights.length ? lights.map((l) => chip(l, false)).join("") : offline;
+}
+
+function renderLog() {
+  const rows = snap.log.slice(0, 40).map((e) => {
+    const res = e.action == null ? `<span class="res-pending">not mapped</span>`
+      : e.ok == null ? `<span class="res-pending">sending…</span>`
+      : e.ok ? `<span class="res-ok">✓ ${esc(e.message || "ok")}</span>`
+      : `<span class="res-bad">✗ ${esc(e.message || "failed")}</span>`;
+    return `<tr><td class="mono muted" style="white-space:nowrap">${clock(e.ts)}</td>
+      <td>${esc(e.keyboard)}</td><td><kbd>${prettyKey(e.key)}</kbd></td>
+      <td>${esc(e.action || "")}</td><td>${res}</td></tr>`;
+  }).join("");
+  $("log").innerHTML = rows
+    ? `<tr><th>Time</th><th>Keyboard</th><th>Key</th><th>Action</th><th>Result</th></tr>${rows}`
+    : `<tr><td class="empty">No key presses yet.</td></tr>`;
+}
+
+function renderUnassigned() {
+  const rows = snap.unassigned.map((n) => `<tr>
+    <td class="mono">${esc(n.path)}</td><td>${esc(n.name)}</td><td class="mono">${esc(n.uniq || "—")}</td>
+    <td class="small ${n.error ? "res-bad" : "muted"}">${esc(n.error || n.phys)}</td></tr>`).join("");
+  $("unassigned").innerHTML = rows
+    ? `<tr><th>Path</th><th>Name</th><th>MAC (uniq)</th><th>Info</th></tr>${rows}`
+    : `<tr><td class="empty">None.</td></tr>`;
+}
+
+function render() {
+  if (!snap) return;
+  renderHeader(); renderKeyboards(); renderLights(); renderLog(); renderUnassigned();
+}
+
+function onKey(ev) {
+  const id = ev.keyboard + "\u0000" + ev.key;
+  flashes.set(id, Date.now());
+  const row = document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
+  if (row) { row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
+}
+
+function setLive(ok) {
+  const el = $("live");
+  el.className = "pill " + (ok ? "ok" : "warn");
+  el.innerHTML = `<span class="dot"></span>${ok ? "live" : "reconnecting…"}`;
+}
+
+function connect() {
+  const es = new EventSource("api/events");
+  es.addEventListener("open", () => setLive(true));
+  es.addEventListener("error", () => setLive(false));   // EventSource retries by itself
+  es.addEventListener("status", (m) => {
+    setLive(true);
+    snap = JSON.parse(m.data);
+    clockOffset = snap.now - Date.now() / 1000;
+    render();
+  });
+  es.addEventListener("key", (m) => onKey(JSON.parse(m.data)));
+}
+
+connect();
+setInterval(() => { if (snap) { renderHeader(); renderKeyboards(); } }, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+# hue-palace configuration. Copy to config.yaml (or /etc/hue-palace/config.yaml) and edit.
+# Names of lights, rooms, zones and scenes are matched case-insensitively against the
+# names in the Hue app. Problems (e.g. a misspelled room) show up on the status page.
+
+bridge:
+  host: 192.168.1.10              # or set HUE_BRIDGE_HOST
+  app_key_file: /config/appkey    # or app_key: "...", or set HUE_APP_KEY
+                                  # get one with: hue-palace pair <host> --save <file>
+
+web:
+  host: 0.0.0.0
+  port: 8080
+
+# Each keyboard is recognised by its Bluetooth MAC address and/or its name.
+# Run `hue-palace list-devices` to see both, and `hue-palace list-devices --watch`
+# to see the name of each key as you press it.
+#
+# Actions:
+#   scene            needs `scene:`; optional `room:` or `zone:` when the name exists in several
+#   on / off / toggle            needs exactly one of `light:`, `room:`, `zone:`
+#   brightness_up / _down        same targets, plus optional `step:` (percent, default 10)
+keyboards:
+  - name: Living room remote
+    match:
+      mac: "AA:BB:CC:DD:EE:FF"
+    # grab: true   # default: take the keyboard exclusively so keys don't reach the console
+    keys:
+      KEY_Q:    { action: scene, scene: Sunset, room: Living room }
+      KEY_W:    { action: scene, scene: cycle }
+      KEY_E:    { action: toggle, room: Living room }
+      KEY_R:    { action: toggle, light: Wheel }
+      KEY_UP:   { action: brightness_up, room: Living room, step: 15 }
+      KEY_DOWN: { action: brightness_down, room: Living room, step: 15 }
+
+  - name: Workshop pad
+    match:
+      name: "MK321BT"
+      name_contains: true
+    keys:
+      KEY_1: { action: scene, scene: Workshop, zone: Workshop }
+      KEY_2: { action: on, zone: Workshop }
+      KEY_3: { action: off, zone: Workshop }

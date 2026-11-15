@@ -1,0 +1,19 @@
+# On the Pi:  mkdir config && cp config.example.yaml config/config.yaml  (edit it)
+#             hue-palace pair <bridge-ip> --save config/appkey   (or via `docker compose run`)
+#             docker compose up -d
+services:
+  hue-palace:
+    image: hue-palace:latest
+    build: .
+    container_name: hue-palace
+    restart: unless-stopped          # comes back after reboots and crashes
+    network_mode: host               # status page on http://<pi>:8080, direct LAN access to the bridge
+    volumes:
+      - /dev/input:/dev/input        # live view of input devices, including ones that appear later
+      - ./config:/config:ro          # config.yaml + appkey
+      - /etc/localtime:/etc/localtime:ro
+    device_cgroup_rules:
+      - "c 13:* rmw"                 # allow all input devices (major 13), even ones created after start
+    logging:
+      driver: json-file
+      options: { max-size: "1m", max-file: "3" }   # spare the SD card

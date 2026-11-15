@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# hue-palace local config and secrets
+config.yaml
+config/
+appkey
+*.tar

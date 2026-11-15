@@ -1,0 +1,25 @@
+[Unit]
+Description=hue-palace: keyboards as Philips Hue remotes
+Wants=network-online.target
+After=network-online.target bluetooth.target
+
+[Service]
+Type=simple
+User=hue-palace
+Group=hue-palace
+SupplementaryGroups=input
+ExecStart=/opt/hue-palace/venv/bin/hue-palace run --config /etc/hue-palace/config.yaml
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# Hardening: read-only system, access to input devices only.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+DevicePolicy=closed
+DeviceAllow=char-input rw
+
+[Install]
+WantedBy=multi-user.target
