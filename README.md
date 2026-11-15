@@ -94,6 +94,20 @@ sudo nano /etc/hue-palace/config.yaml
 sudo systemctl restart hue-palace && journalctl -u hue-palace -f
 ```
 
+#### Managing the service
+
+| Task | Command |
+|---|---|
+| Is it running? Recent log lines | `systemctl status hue-palace` |
+| Follow the logs live | `journalctl -u hue-palace -f` |
+| Logs since the last boot | `journalctl -u hue-palace -b` |
+| Apply config changes | `sudo systemctl restart hue-palace` |
+| Stop it / start it | `sudo systemctl stop hue-palace` / `start` |
+| Don't start at boot any more | `sudo systemctl disable hue-palace` |
+| Show the unit file systemd is using | `systemctl cat hue-palace` |
+| Rate the sandboxing | `systemd-analyze security hue-palace` |
+| Update to a new version | `git pull && sudo deploy/install-systemd.sh` |
+
 ### Which to choose?
 
 Both are fully supported, and the app doesn't depend on either. Docker gives you a
