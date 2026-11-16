@@ -12,6 +12,7 @@ services:
       - /dev/input:/dev/input        # live view of input devices, including ones that appear later
       - ./config:/config:ro          # config.yaml + appkey
       - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro         # host's bluetoothd (BLE buttons); pairing stays on the host
     device_cgroup_rules:
       - "c 13:* rmw"                 # allow all input devices (major 13), even ones created after start
     logging:

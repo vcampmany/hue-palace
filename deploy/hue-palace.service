@@ -1,13 +1,14 @@
 [Unit]
 Description=hue-palace: keyboards as Philips Hue remotes
-Wants=network-online.target
+Wants=network-online.target bluetooth.service
 After=network-online.target bluetooth.target
 
 [Service]
 Type=simple
 User=hue-palace
 Group=hue-palace
-SupplementaryGroups=input
+# input: read keyboards; bluetooth: talk to bluetoothd over D-Bus (BLE buttons)
+SupplementaryGroups=input bluetooth
 ExecStart=/opt/hue-palace/venv/bin/hue-palace run --config /etc/hue-palace/config.yaml
 Restart=always
 RestartSec=5

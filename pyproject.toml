@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hue-palace"
 version = "0.1.0"
-description = "Turn Bluetooth/USB keyboards into Philips Hue remotes, with a web status page"
+description = "Turn Bluetooth/USB keyboards and BLE (BTHome) buttons into Philips Hue remotes, with a web status page"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -14,6 +14,8 @@ dependencies = [
     "evdev==1.9.3",
     "pydantic>=2.6,<3",
     "PyYAML>=6.0",
+    "bleak>=1.0,<4",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

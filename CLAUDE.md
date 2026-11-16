@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 `hue-palace`: an asyncio Python service, run as a boot-time service on a Raspberry Pi Zero 2 W,
-that turns Bluetooth/USB keyboards into Philips Hue remotes. Key maps come from a YAML config,
+that turns Bluetooth/USB keyboards and BTHome BLE buttons (e.g. Shelly BLU RC Button 4) into
+Philips Hue remotes. Key maps come from a YAML config,
 and a read-only web status page shows each keyboard's state. User-facing docs, including Pi and
 Bluetooth setup, are in `README.md`.
 
@@ -17,6 +18,7 @@ Bluetooth setup, are in `README.md`.
 .venv/bin/pytest tests/test_hue.py::test_toggle_light # one test
 .venv/bin/hue-palace --debug run -c config.yaml       # run locally (--debug goes before the subcommand)
 .venv/bin/hue-palace list-devices --watch             # see device names/MACs and key names
+.venv/bin/hue-palace list-ble                         # see BTHome BLE devices and their button events
 ```
 
 Tests use fakes for the bridge and for evdev devices, so they need neither hardware nor a bridge.
@@ -25,7 +27,8 @@ Tests use fakes for the bridge and for evdev devices, so they need neither hardw
 ## Architecture (`src/hue_palace/`)
 
 Everything runs in one event loop started by `__main__._run`: the Hue controller, the keyboard
-manager, the web server and the state publisher are sibling tasks. If any one crashes the
+manager, the web server, the state publisher and (only if `ble_buttons` is configured) the BLE
+manager are sibling tasks. If any one crashes the
 process exits non-zero, and systemd/Docker restarts it.
 
 - `config.py`: pydantic models (frozen, `extra="forbid"`). `parse_config` turns
@@ -37,6 +40,14 @@ process exits non-zero, and systemd/Docker restarts it.
   logical keyboard can have several event nodes. Paths are never trusted across reconnects:
   `_detach` drops the path from `_known` so a reused `eventN` is inspected again. `close()`
   releases devices whose reader tasks were cancelled before they started.
+- `bthome.py`: pure BTHome v2 decoder (object size table, button events, AES-CCM decryption
+  checked against the bthome.io test vector). Button N = the Nth `0x3A` object in the packet.
+- `ble.py`: `BleManager` runs a bleak scan with no UUID filter and BlueZ `DuplicateData=True`
+  (bleak's default drops identical repeats, which would swallow a second identical press).
+  The watchdog relies on hearing *any* advert, so keep the scan unfiltered. `Deduplicator`
+  uses, in order of preference, the encryption counter (which must increase, so replays are
+  rejected), then the packet id, then an identical payload within 2 s. Mapping keys have the
+  form `button<N>:<event>`, which is also what `record_key` and the UI use.
 - `hue.py`: `resolve()` / `execute()` are pure functions over a bridge-like object (which is
   what the tests fake). `HueController` holds the single `HueBridgeV2`, retries the initial
   connect with backoff (aiohue's event stream reconnects itself after that), and runs actions
@@ -44,6 +55,7 @@ process exits non-zero, and systemd/Docker restarts it.
   `grouped_light`. Names are re-resolved on every press, so renames in the Hue app take effect
   without a restart.
 - `state.py`: `AppState` is the single source for the UI. Mutate it, then call `changed()`.
+  Keyboards and BLE buttons share one name space (`record_key(source, ...)`, `LogEntry.source`).
   `run_publisher` coalesces changes into `status` snapshots; `record_key` also publishes an
   immediate `key` event.
 - `web.py` + `static/index.html`: aiohttp (already a dependency of aiohue) serves `/`,
@@ -53,7 +65,8 @@ process exits non-zero, and systemd/Docker restarts it.
 
 `Dockerfile` + `compose.yaml` (host network, `/dev/input` bind-mounted, `device_cgroup_rules`
 for input major 13), built for `linux/arm64` by `deploy/push-to-pi.sh`. Alternatively
-`deploy/install-systemd.sh` + `deploy/hue-palace.service`. Bluetooth pairing is done on the
+`deploy/install-systemd.sh` + `deploy/hue-palace.service` (groups `input` + `bluetooth`;
+`compose.yaml` mounts `/run/dbus` for bleak). Bluetooth pairing is done on the
 host with `bluetoothctl`, never in the container.
 
 ## Secrets

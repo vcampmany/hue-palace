@@ -11,6 +11,9 @@ web:
   host: 0.0.0.0
   port: 8080
 
+# ble:
+#   adapter: hci0                 # only needed with several Bluetooth adapters
+
 # Each keyboard is recognised by its Bluetooth MAC address and/or its name.
 # Run `hue-palace list-devices` to see both, and `hue-palace list-devices --watch`
 # to see the name of each key as you press it.
@@ -40,3 +43,23 @@ keyboards:
       KEY_1: { action: scene, scene: Workshop, zone: Workshop }
       KEY_2: { action: on, zone: Workshop }
       KEY_3: { action: off, zone: Workshop }
+
+# BLE buttons that broadcast BTHome v2 (e.g. Shelly BLU RC Button 4 / Button 4 ZB).
+# Don't pair them in bluetoothctl: they're heard by scanning. Find the MAC and see the
+# event names with `hue-palace list-ble`. Events: press, double_press, triple_press,
+# long_press, long_double_press, long_triple_press, hold_press, hold_release.
+ble_buttons:
+  - name: Bedroom button
+    mac: "7C:C6:B6:61:2E:9A"
+    # bindkey: "0123456789abcdef0123456789abcdef"   # only if encryption is enabled in the Shelly app
+    buttons:
+      1:
+        press:        { action: toggle, room: Bedroom }
+        double_press: { action: scene, scene: Relax, room: Bedroom }
+        long_press:   { action: off, zone: Upstairs }
+      2:
+        press:        { action: brightness_up, room: Bedroom, step: 20 }
+      3:
+        press:        { action: brightness_down, room: Bedroom, step: 20 }
+      4:
+        press:        { action: scene, scene: Nightlight, room: Bedroom }

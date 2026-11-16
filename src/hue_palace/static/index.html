@@ -80,6 +80,7 @@
   <header>
     <h1>hue<span>·</span>palace</h1>
     <span id="bridge" class="pill"><span class="dot"></span>Bridge …</span>
+    <span id="ble" class="pill" hidden><span class="dot"></span>BLE</span>
     <span class="spacer"></span>
     <span id="uptime" class="muted small"></span>
     <span id="live" class="pill"><span class="dot"></span>connecting</span>
@@ -87,6 +88,11 @@
 
   <h2>Keyboards</h2>
   <div id="keyboards" class="grid"></div>
+
+  <section id="ble-section" hidden>
+    <h2>Bluetooth buttons</h2>
+    <div id="blebuttons" class="grid"></div>
+  </section>
 
   <h2>Lights</h2>
   <div id="rooms" class="chips"></div>
@@ -101,6 +107,12 @@
   <h2>Other input devices</h2>
   <p class="muted small" style="margin-top:-4px">Detected devices that don't match any configured keyboard. Copy the name or MAC into <span class="mono">config.yaml</span> to use one.</p>
   <div class="table-wrap"><table id="unassigned"></table></div>
+
+  <section id="ble-other" hidden>
+    <h2>Other BTHome devices</h2>
+    <p class="muted small" style="margin-top:-4px">Heard over Bluetooth LE but not in the config. Copy the MAC into <span class="mono">ble_buttons</span> to use one.</p>
+    <div class="table-wrap"><table id="bleunassigned"></table></div>
+  </section>
 </main>
 
 <script>
@@ -130,6 +142,12 @@ function duration(sec) {
 }
 const clock = (ts) => new Date((ts - clockOffset) * 1000).toLocaleTimeString();
 const prettyKey = (k) => esc(String(k).replace(/^(KEY|BTN)_/, ""));
+// "KEY_Q" -> <kbd>Q</kbd>;  "button2:double_press" -> <kbd>2</kbd> double press
+function keyLabel(k) {
+  const m = /^button(\d+):(.+)$/.exec(k);
+  return m ? `<kbd title="Button ${m[1]}">${m[1]}</kbd> <span class="small">${esc(m[2].replace(/_/g, " "))}</span>`
+           : `<kbd>${prettyKey(k)}</kbd>`;
+}
 
 function renderHeader() {
   const b = snap.bridge;
@@ -151,16 +169,10 @@ function renderKeyboards() {
       ? `<span class="pill ok"><span class="dot"></span>Connected</span>`
       : `<span class="pill"><span class="dot"></span>Waiting for device</span>`;
     const last = kb.last_key
-      ? `Last key <kbd>${prettyKey(kb.last_key)}</kbd> <span class="muted">${ago(kb.last_key_at)}</span>${
+      ? `Last key ${keyLabel(kb.last_key)} <span class="muted">${ago(kb.last_key_at)}</span>${
           kb.keys.some((k) => k.key === kb.last_key) ? "" : ` <span class="muted">(not mapped)</span>`}`
       : `<span class="muted">No key pressed yet</span>`;
-    const rows = kb.keys.map((k) => {
-      const id = kb.name + "\u0000" + k.key;
-      const fresh = Date.now() - (flashes.get(id) || 0) < 1400;
-      return `<tr data-id="${esc(id)}" class="${fresh ? "flash" : ""}">
-        <td style="width:1%;white-space:nowrap"><kbd>${prettyKey(k.key)}</kbd></td>
-        <td>${esc(k.description)}${k.problem ? `<div class="problem">⚠ ${esc(k.problem)}</div>` : ""}</td></tr>`;
-    }).join("");
+    const rows = keyRows(kb.name, kb.keys);
     return `<section class="card ${kb.connected ? "" : "offline"}">
       <div class="card-head">
         <div class="card-title"><h3>${esc(kb.name)}</h3>${status}</div>
@@ -177,6 +189,60 @@ function renderKeyboards() {
       <table>${rows}</table>
     </section>`;
   }).join("") || `<div class="empty">No keyboards configured.</div>`;
+}
+
+function keyRows(source, keys) {
+  return keys.map((k) => {
+    const id = source + "\u0000" + k.key;
+    const fresh = Date.now() - (flashes.get(id) || 0) < 1400;
+    return `<tr data-id="${esc(id)}" class="${fresh ? "flash" : ""}">
+      <td style="width:1%;white-space:nowrap">${keyLabel(k.key)}</td>
+      <td>${esc(k.description)}${k.problem ? `<div class="problem">⚠ ${esc(k.problem)}</div>` : ""}</td></tr>`;
+  }).join("");
+}
+
+function renderBle() {
+  const sc = snap.ble_scanner;
+  const pill = $("ble");
+  pill.hidden = !sc.enabled;
+  pill.className = "pill " + (sc.running ? "ok" : "bad");
+  pill.innerHTML = `<span class="dot"></span>BLE scan · ${sc.running ? "listening" : esc(sc.error || "stopped")}`;
+  $("ble-section").hidden = !snap.ble_buttons.length;
+  $("ble-other").hidden = !sc.enabled;
+  $("blebuttons").innerHTML = snap.ble_buttons.map((b) => {
+    const heard = b.last_heard && now() - b.last_heard < 3600;
+    const status = !b.last_heard
+      ? `<span class="pill"><span class="dot"></span>Not heard yet</span>`
+      : `<span class="pill ${heard ? "ok" : ""}"><span class="dot"></span>Heard ${ago(b.last_heard)}</span>`;
+    const battery = b.battery == null ? "" :
+      `<span class="${b.battery <= 15 ? "res-bad" : ""}">battery ${b.battery}%</span>`;
+    const last = b.last_key
+      ? `Last ${keyLabel(b.last_key)} <span class="muted">${ago(b.last_key_at)}</span>${
+          b.keys.some((k) => k.key === b.last_key) ? "" : ` <span class="muted">(not mapped)</span>`}`
+      : `<span class="muted">No button pressed yet</span>`;
+    return `<section class="card ${b.last_heard ? "" : "offline"}">
+      <div class="card-head">
+        <div class="card-title"><h3>${esc(b.name)}</h3>${status}</div>
+        <div class="meta small muted">
+          <span class="mono">${esc(b.mac.toUpperCase())}</span>
+          ${b.rssi != null ? `<span>${b.rssi} dBm</span>` : ""}
+          ${battery}
+          ${b.encrypted ? "<span>encrypted</span>" : ""}
+          <span>${b.presses} event${b.presses === 1 ? "" : "s"}</span>
+        </div>
+        ${b.error ? `<div class="problem">${esc(b.error)}</div>` : ""}
+        <div class="last small">${last}</div>
+      </div>
+      <table>${keyRows(b.name, b.keys)}</table>
+    </section>`;
+  }).join("");
+  const rows = snap.ble_unassigned.map((d) => `<tr>
+    <td class="mono">${esc(d.mac.toUpperCase())}</td><td>${esc(d.name || "—")}</td>
+    <td>${d.rssi ?? "—"} dBm</td><td class="muted">${ago(d.last_heard)}</td>
+    <td class="small">${d.encrypted ? "encrypted" : esc(d.last_event || "")}</td></tr>`).join("");
+  $("bleunassigned").innerHTML = rows
+    ? `<tr><th>MAC</th><th>Name</th><th>Signal</th><th>Heard</th><th>Last event</th></tr>${rows}`
+    : `<tr><td class="empty">None heard yet.</td></tr>`;
 }
 
 function chip(item, withKind) {
@@ -199,11 +265,11 @@ function renderLog() {
       : e.ok ? `<span class="res-ok">✓ ${esc(e.message || "ok")}</span>`
       : `<span class="res-bad">✗ ${esc(e.message || "failed")}</span>`;
     return `<tr><td class="mono muted" style="white-space:nowrap">${clock(e.ts)}</td>
-      <td>${esc(e.keyboard)}</td><td><kbd>${prettyKey(e.key)}</kbd></td>
+      <td>${esc(e.source)}</td><td style="white-space:nowrap">${keyLabel(e.key)}</td>
       <td>${esc(e.action || "")}</td><td>${res}</td></tr>`;
   }).join("");
   $("log").innerHTML = rows
-    ? `<tr><th>Time</th><th>Keyboard</th><th>Key</th><th>Action</th><th>Result</th></tr>${rows}`
+    ? `<tr><th>Time</th><th>Remote</th><th>Key</th><th>Action</th><th>Result</th></tr>${rows}`
     : `<tr><td class="empty">No key presses yet.</td></tr>`;
 }
 
@@ -218,11 +284,11 @@ function renderUnassigned() {
 
 function render() {
   if (!snap) return;
-  renderHeader(); renderKeyboards(); renderLights(); renderLog(); renderUnassigned();
+  renderHeader(); renderKeyboards(); renderBle(); renderLights(); renderLog(); renderUnassigned();
 }
 
 function onKey(ev) {
-  const id = ev.keyboard + "\u0000" + ev.key;
+  const id = ev.source + "\u0000" + ev.key;
   flashes.set(id, Date.now());
   const row = document.querySelector(`tr[data-id="${CSS.escape(id)}"]`);
   if (row) { row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
@@ -248,7 +314,7 @@ function connect() {
 }
 
 connect();
-setInterval(() => { if (snap) { renderHeader(); renderKeyboards(); } }, 5000);
+setInterval(() => { if (snap) { renderHeader(); renderKeyboards(); renderBle(); } }, 5000);
 </script>
 </body>
 </html>

@@ -179,10 +179,13 @@ class HueController:
             self.bridge = bridge
             self.state.bridge.bridge_id = bridge.bridge_id
             log.info("connected to bridge %s (%s)", self.host, bridge.bridge_id)
-            for kb in self.state.config.keyboards:
-                for key, action in kb.keys.items():
+            config = self.state.config
+            remotes = [(kb.name, kb.keys) for kb in config.keyboards]
+            remotes += [(b.name, b.mappings()) for b in config.ble_buttons]
+            for name, mapping in remotes:
+                for key, action in mapping.items():
                     if problem := self.check(action):
-                        log.warning("%s / %s: %s", kb.name, key, problem)
+                        log.warning("%s / %s: %s", name, key, problem)
             unsubscribe = bridge.subscribe(self._on_event)
             unsubscribe_events = bridge.events.subscribe(
                 self._on_event,

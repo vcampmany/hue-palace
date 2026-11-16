@@ -40,6 +40,32 @@ class KeyboardStatus:
 
 
 @dataclass
+class BleStatus:
+    name: str
+    mac: str
+    last_heard: float | None = None
+    rssi: int | None = None
+    battery: int | None = None
+    encrypted: bool | None = None
+    error: str | None = None
+    last_key: str | None = None
+    last_key_at: float | None = None
+    presses: int = 0
+
+
+@dataclass
+class BleDevice:
+    """A BTHome device that was heard but isn't configured."""
+
+    mac: str
+    name: str
+    rssi: int | None
+    last_heard: float
+    encrypted: bool
+    last_event: str | None = None
+
+
+@dataclass
 class BridgeStatus:
     host: str
     connected: bool = False
@@ -51,7 +77,7 @@ class BridgeStatus:
 @dataclass
 class LogEntry:
     ts: float
-    keyboard: str
+    source: str  # keyboard or BLE button name
     key: str
     action: str | None
     ok: bool | None = None  # None = pending / not an action
@@ -76,6 +102,13 @@ class AppState:
             kb.name: KeyboardStatus(kb.name) for kb in config.keyboards
         }
         self.unassigned: dict[str, InputNode] = {}
+        self.ble_buttons: dict[str, BleStatus] = {
+            b.name: BleStatus(b.name, b.mac) for b in config.ble_buttons
+        }
+        self.ble_scanner: dict[str, Any] = {
+            "enabled": bool(config.ble_buttons), "running": False, "error": None,
+        }
+        self.ble_unassigned: dict[str, BleDevice] = {}
         self.log: deque[LogEntry] = deque(maxlen=100)
         # Set by HueController: returns light/room state and resolves actions.
         self.hue_snapshot: Callable[[], dict[str, Any]] = lambda: {"rooms": [], "lights": []}
@@ -111,14 +144,15 @@ class AppState:
 
     # -- mutations -------------------------------------------------------------
 
-    def record_key(self, keyboard: str, key: str, action: Action | None) -> LogEntry:
+    def record_key(self, source: str, key: str, action: Action | None) -> LogEntry:
+        """Record a key press (keyboard) or button event (BLE button) by remote name."""
         now = time.time()
-        kb = self.keyboards[keyboard]
-        kb.last_key, kb.last_key_at = key, now
-        kb.presses += 1
-        entry = LogEntry(now, keyboard, key, action.describe() if action else None)
+        remote = self.keyboards.get(source) or self.ble_buttons[source]
+        remote.last_key, remote.last_key_at = key, now
+        remote.presses += 1
+        entry = LogEntry(now, source, key, action.describe() if action else None)
         self.log.append(entry)
-        self._publish("key", {"keyboard": keyboard, "key": key, "mapped": action is not None})
+        self._publish("key", {"source": source, "key": key, "mapped": action is not None})
         self.changed()
         return entry
 
@@ -154,12 +188,34 @@ class AppState:
                     ],
                 }
             )
+        ble_buttons = []
+        for b_cfg in self.config.ble_buttons:
+            st = self.ble_buttons[b_cfg.name]
+            ble_buttons.append(
+                {
+                    **asdict(st),
+                    "keys": [
+                        {
+                            "key": key,
+                            "action": action.action.value,
+                            "description": action.describe(),
+                            "problem": self.check_action(action),
+                        }
+                        for key, action in b_cfg.mappings().items()
+                    ],
+                }
+            )
         return {
             "now": time.time(),
             "started_at": self.started_at,
             "bridge": asdict(self.bridge),
             "keyboards": keyboards,
             "unassigned": [asdict(n) for n in self.unassigned.values()],
+            "ble_scanner": dict(self.ble_scanner),
+            "ble_buttons": ble_buttons,
+            "ble_unassigned": sorted(
+                (asdict(d) for d in self.ble_unassigned.values()), key=lambda d: -d["last_heard"]
+            ),
             "hue": self.hue_snapshot(),
             "log": [asdict(e) for e in reversed(self.log)],
         }

@@ -1,6 +1,6 @@
 # hue-palace
 
-Turn Bluetooth (or USB) keyboards into Philips Hue remotes. Built to run headless on a
+Turn Bluetooth (or USB) keyboards, and BLE broadcast buttons such as the Shelly BLU RC Button 4, into Philips Hue remotes. Built to run headless on a
 Raspberry Pi Zero 2 W: it starts at boot, listens to several keyboards, each with its own
 key map, and serves a status page showing what every keyboard is doing.
 
@@ -38,6 +38,7 @@ Helper commands:
 | `hue-palace pair <bridge-ip> [--save FILE]` | Get an app key (press the bridge's link button first) |
 | `hue-palace list-devices` | List input devices with their name and MAC, to fill in `match:` |
 | `hue-palace list-devices --watch` | Print each key's name as you press it, to fill in `keys:` |
+| `hue-palace list-ble` | List BTHome BLE buttons with their MAC and press events, to fill in `ble_buttons:` |
 | `hue-palace run -c config.yaml` | Run the service (the default command) |
 
 The config is read once at startup, so restart the service after editing it.
@@ -116,10 +117,57 @@ moving parts on a 512 MB board. Either way, consider enabling the **overlay (rea
 system** in `raspi-config → Performance` once everything works, so power cuts can't corrupt the
 SD card.
 
+### BLE buttons (Shelly BLU RC Button 4 and other BTHome devices)
+
+Some battery buttons don't connect like a keyboard. Instead they **broadcast** each press as
+a Bluetooth LE advertisement in the [BTHome v2](https://bthome.io) format; Shelly's BLU
+buttons are an example. hue-palace scans for those broadcasts and maps
+*button × press type* to actions.
+
+1. **Use Bluetooth mode, and don't pair it.** The *ZB* model also speaks Zigbee: pressing a
+   button 5 times starts Zigbee pairing, so avoid that. Nothing needs pairing in `bluetoothctl`;
+   the Pi just listens.
+2. **Find its MAC and event names.** Stop the service first, then run
+   `sudo hue-palace list-ble` and press each button in each way. It prints lines such as
+   `7C:C6:B6:61:2E:9A: button2:double_press`. Unconfigured BTHome devices also appear on the
+   status page under **Other BTHome devices**.
+3. **Add it to the config:**
+   ```yaml
+   ble_buttons:
+     - name: Bedroom button
+       mac: "7C:C6:B6:61:2E:9A"
+       buttons:
+         1:
+           press:        { action: toggle, room: Bedroom }
+           double_press: { action: scene, scene: Relax, room: Bedroom }
+           long_press:   { action: off, zone: Upstairs }
+         2:
+           press:        { action: brightness_up, room: Bedroom, step: 20 }
+   ```
+   Press types: `press`, `double_press`, `triple_press`, `long_press`, `long_double_press`,
+   `long_triple_press`, `hold_press`, `hold_release`. Which of these a device sends depends on
+   the device.
+4. Restart the service. The button gets a card on the status page showing last heard, signal
+   strength, battery and its mappings.
+
+**Encryption (optional).** Encryption is off by default, which means anyone within Bluetooth
+range could fake a press. To turn it on, enable encryption for the button in the **Shelly
+Smart Control** app and copy the key into the config as `bindkey: "<32 hex characters>"`.
+hue-palace then rejects packets that fail to decrypt or that replay an older counter. Changing
+the passkey generates a new key, and turning encryption off again requires a factory reset of
+the button.
+
+**How it runs.** The BLE scan only starts when `ble_buttons` is configured. It goes through
+bluetoothd, so it needs D-Bus access: the systemd unit adds the `bluetooth` group, and
+`compose.yaml` mounts `/run/dbus`. Each press is repeated on air for about a second, and
+duplicates are filtered, so one press triggers one action.
+
 ### Bluetooth notes
 
 - The Zero 2 W has 2.4 GHz-only Wi-Fi on the same radio as Bluetooth. A few keyboards are
   fine, but if presses lag, improve the Wi-Fi signal or move the router to a quieter channel.
+- BLE button scanning runs continuously on that same radio. If keyboards or Wi-Fi get
+  laggy after adding BLE buttons, this is the first thing to suspect.
 - Keyboards that sleep reconnect when you press a key. That first key press may be lost while
   the link comes back up.
 

@@ -48,6 +48,11 @@ async def _run(config_path: str) -> int:
         asyncio.create_task(serve(state, config.web), name="web"),
         asyncio.create_task(state.run_publisher(), name="publisher"),
     ]
+    if config.ble_buttons:  # only touch Bluetooth LE when BLE buttons are configured
+        from .ble import BleManager
+
+        ble = BleManager(config.ble_buttons, state, hue.submit, adapter=config.ble.adapter)
+        tasks.append(asyncio.create_task(ble.run(), name="ble"))
     stopper = asyncio.create_task(stop.wait(), name="stop")
     done, _ = await asyncio.wait([*tasks, stopper], return_when=asyncio.FIRST_COMPLETED)
 
@@ -108,6 +113,57 @@ def cmd_list_devices(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_list_ble(args: argparse.Namespace) -> int:
+    from .ble import Deduplicator, make_scanner
+    from .bthome import SERVICE_UUID, BTHomeError, parse
+
+    seen: set[str] = set()
+    dedup = Deduplicator()
+
+    def on_adv(device, adv) -> None:
+        data = adv.service_data.get(SERVICE_UUID)
+        if data is None:
+            return
+        mac = device.address.lower()
+        name = adv.local_name or device.name or ""
+        try:
+            packet = parse(data, mac)
+        except BTHomeError as err:
+            print(f"{mac}  {name!r}: invalid BTHome packet ({err})")
+            return
+        if mac not in seen:
+            seen.add(mac)
+            print(f"found {mac.upper()}  {name!r}  RSSI {adv.rssi} dBm"
+                  f"{'  [encrypted]' if packet.encrypted else ''}")
+        if packet.encrypted or not dedup.is_new(mac, packet):
+            return
+        parts = [f"button{n}:{e}" for n, e in packet.events]
+        if packet.battery is not None:
+            parts.append(f"battery {packet.battery}%")
+        if parts:
+            print(f"  {mac.upper()}: {', '.join(parts)}")
+
+    async def main() -> None:
+        scanner = make_scanner(on_adv, args.adapter)
+        await scanner.start()
+        try:
+            await asyncio.sleep(args.seconds)
+        finally:
+            await scanner.stop()
+
+    print(f"Listening for BTHome devices for {args.seconds}s; press the buttons now (Ctrl+C to stop)…")
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception as err:  # noqa: BLE001 - BlueZ / D-Bus errors
+        print(f"BLE scan failed: {type(err).__name__}: {err}", file=sys.stderr)
+        return 1
+    if not seen:
+        print("No BTHome devices heard. Is the button in Bluetooth (not Zigbee) mode? Press a button.")
+    return 0
+
+
 def cmd_pair(args: argparse.Namespace) -> int:
     from aiohue import create_app_key
 
@@ -143,6 +199,11 @@ def main(argv: list[str] | None = None) -> int:
     p_list = sub.add_parser("list-devices", help="show input devices, to write the config")
     p_list.add_argument("-w", "--watch", action="store_true", help="also print key names as you press them")
     p_list.set_defaults(func=cmd_list_devices)
+
+    p_ble = sub.add_parser("list-ble", help="show BTHome BLE buttons/sensors and their events")
+    p_ble.add_argument("-s", "--seconds", type=float, default=30, help="how long to listen (default 30)")
+    p_ble.add_argument("--adapter", help="Bluetooth adapter, e.g. hci0")
+    p_ble.set_defaults(func=cmd_list_ble)
 
     p_pair = sub.add_parser("pair", help="get an app key from the bridge (press its link button)")
     p_pair.add_argument("host", help="bridge IP or hostname")

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
+import re
 from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import yaml
 from evdev import ecodes
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .bthome import EVENT_NAMES
 
 
 class ConfigError(Exception):
@@ -144,6 +147,60 @@ class KeyboardConfig(_Strict):
         return v
 
 
+EventName = Literal[EVENT_NAMES]  # press, double_press, long_press, hold_press, ...
+_MAC_RE = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
+
+
+class BleButtonConfig(_Strict):
+    """A BTHome BLE button (e.g. Shelly BLU RC Button 4), heard via advertisements."""
+
+    name: str
+    mac: str
+    bindkey: str | None = None
+    buttons: dict[Annotated[int, Field(ge=1, le=16)], dict[EventName, Action]]
+
+    @field_validator("mac")
+    @classmethod
+    def _check_mac(cls, v: str) -> str:
+        v = v.strip().lower().replace("-", ":")
+        if not _MAC_RE.match(v):
+            raise ValueError("must look like AA:BB:CC:DD:EE:FF")
+        return v
+
+    @field_validator("bindkey")
+    @classmethod
+    def _check_bindkey(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{32}", v):
+            raise ValueError("must be 32 hex characters")
+        return v
+
+    @field_validator("buttons")
+    @classmethod
+    def _check_buttons(cls, v: dict) -> dict:
+        if not any(v.values()):
+            raise ValueError("at least one button event mapping is required")
+        return v
+
+    @property
+    def bindkey_bytes(self) -> bytes | None:
+        return bytes.fromhex(self.bindkey) if self.bindkey else None
+
+    def mappings(self) -> dict[str, Action]:
+        """Flattened as 'button<N>:<event>' -> action, in button order."""
+        return {
+            f"button{n}:{event}": action
+            for n in sorted(self.buttons)
+            for event, action in self.buttons[n].items()
+        }
+
+
+class BleConfig(_Strict):
+    adapter: str | None = None  # e.g. "hci0"; default adapter if unset
+
+
 class BridgeConfig(_Strict):
     host: str
     app_key: str | None = None
@@ -174,16 +231,23 @@ class WebConfig(_Strict):
 class Config(_Strict):
     bridge: BridgeConfig
     web: WebConfig = WebConfig()
-    keyboards: list[KeyboardConfig]
+    ble: BleConfig = BleConfig()
+    keyboards: list[KeyboardConfig] = []
+    ble_buttons: list[BleButtonConfig] = []
 
-    @field_validator("keyboards")
-    @classmethod
-    def _unique_names(cls, v: list[KeyboardConfig]) -> list[KeyboardConfig]:
-        names = [k.name for k in v]
+    @model_validator(mode="after")
+    def _check_remotes(self) -> Config:
+        if not self.keyboards and not self.ble_buttons:
+            raise ValueError("configure at least one entry in 'keyboards' or 'ble_buttons'")
+        names = [k.name for k in self.keyboards] + [b.name for b in self.ble_buttons]
         dupes = {n for n in names if names.count(n) > 1}
         if dupes:
-            raise ValueError(f"duplicate keyboard name(s): {', '.join(sorted(dupes))}")
-        return v
+            raise ValueError(f"duplicate keyboard/button name(s): {', '.join(sorted(dupes))}")
+        macs = [b.mac for b in self.ble_buttons]
+        dupes = {m for m in macs if macs.count(m) > 1}
+        if dupes:
+            raise ValueError(f"duplicate BLE button MAC(s): {', '.join(sorted(dupes))}")
+        return self
 
 
 def load_config(path: str | Path) -> Config:
